@@ -28,6 +28,7 @@
 #include <sys/condvar.h>
 #include <spl-debug.h>
 #include <sys/errno.h>
+#include <sys/callb.h>
 
 
 void
@@ -88,13 +89,53 @@ spl_cv_timedwait(kcondvar_t *cvp, kmutex_t *mp, clock_t tim, const char *msg)
     ts.tv_nsec = 0;
 #if 1
     if (ts.tv_sec < 1)
-        ts.tv_sec = 1;
+        ts.tv_nsec = 100;
 #endif
-    if (ts.tv_sec > 1000)
+    if (ts.tv_sec > 400)
         printf("cv_timedwait: will wait %lds\n", ts.tv_sec);
 
     mp->m_owner = NULL;
     result = msleep(cvp, mp->m_lock, PRIBIO, msg, &ts);
+    mp->m_owner = current_thread();
+
+    return (result == EWOULDBLOCK ? -1 : 0);
+
+}
+
+
+/*
+* Compatibility wrapper for the cv_timedwait_hires() Illumos interface.
+*/
+clock_t
+cv_timedwait_hires(kcondvar_t *cvp, kmutex_t *mp, hrtime_t tim,
+                 hrtime_t res, int flag)
+{
+    struct timespec ts;
+    int result;
+
+    if (res > 1) {
+        /*
+         * Align expiration to the specified resolution.
+         */
+        if (flag & CALLOUT_FLAG_ROUNDUP)
+            tim += res - 1;
+        tim = (tim / res) * res;
+    }
+
+    if (!(flag & CALLOUT_FLAG_ABSOLUTE))
+        tim += gethrtime();
+
+    ts.tv_sec = 0;
+    ts.tv_nsec = tim * NSEC_PER_USEC;
+    if (ts.tv_nsec < 1)
+        ts.tv_nsec = 100;
+
+    if (ts.tv_nsec > 400 * NSEC_PER_SEC)
+        printf("cv_timedwait_hires: will wait %llds\n",ts.tv_sec/NSEC_PER_SEC);
+
+
+    mp->m_owner = NULL;
+    result = msleep(cvp, mp->m_lock, PRIBIO, "cv_timedwait_hires", &ts);
     mp->m_owner = current_thread();
 
     return (result == EWOULDBLOCK ? -1 : 0);

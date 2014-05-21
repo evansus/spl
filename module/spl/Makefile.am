@@ -46,12 +46,15 @@ spl_SOURCES = 	\
 	spl-mutex.c \
 	spl-osx.c \
 	spl-proc.c \
+	spl-processor.c \
 	spl-rwlock.c \
 	spl-taskq.c \
 	spl-thread.c \
 	spl-time.c \
+	spl-tsd.c \
 	spl-vnode.c \
-	spl-xdr.c
+	spl-xdr.c \
+	spl-bmalloc.c
 
 spl_CPPFLAGS=$(CFLAGS_KMOD)
 spl_LDFLAGS=$(LINKFLAGS_KMOD)

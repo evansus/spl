@@ -388,6 +388,7 @@
 #include <libkern/libkern.h>
 
 
+
 static kmem_cache_t *taskq_ent_cache, *taskq_cache;
 
 /*
@@ -690,6 +691,7 @@ spl_taskq_init(void)
 
 	taskq_cache = kmem_cache_create("taskq_cache", sizeof (taskq_t),
 	    0, taskq_constructor, taskq_destructor, NULL, NULL, NULL, 0);
+
     return 0;
 }
 
@@ -1182,7 +1184,6 @@ taskq_thread(void *arg)
 	taskq_ent_t *tqe;
 	callb_cpr_t cprinfo;
 	hrtime_t start, end;
-
 	CALLB_CPR_INIT(&cprinfo, &tq->tq_lock, callb_generic_cpr,  tq->tq_name);
 	mutex_enter(&tq->tq_lock);
 	while (tq->tq_flags & TASKQ_ACTIVE) {
@@ -1382,6 +1383,16 @@ taskq_create(const char *name, int nthreads, pri_t pri, int minalloc,
 {
 	taskq_t *tq;
 	uint_t bsize;	/* # of buckets - always power of 2 */
+
+
+	/* Scale the number of threads using nthreads as a percentage */
+    if (flags & TASKQ_THREADS_CPU_PCT) {
+        ASSERT(nthreads <= 100);
+        ASSERT(nthreads >= 0);
+        nthreads = MIN(nthreads, 100);
+        nthreads = MAX(nthreads, 0);
+        nthreads = MAX((max_ncpus * nthreads) / 100, 1);
+    }
 
 	tq = kmem_cache_alloc(taskq_cache, KM_SLEEP);
 

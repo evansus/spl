@@ -217,10 +217,14 @@ void spl_vn_fini(void);
   * Warning: Excessive use of this routine can lead to performance problems.
   * This is because taskqs throttle back allocation if too many are created.
   */
-#define VN_RELE_ASYNC(vp,tq)                        \
-    do {                                            \
-        if ((vp) && (vp) != DNLC_NO_VNODE)          \
-            vnode_put(vp);                          \
+
+void spl_rele_async(void *arg);
+
+#define VN_RELE_ASYNC(vp,tq)                                            \
+    do {                                                                \
+        if ((vp) && (vp) != DNLC_NO_VNODE)                              \
+            (void) thread_create(NULL, 0, spl_rele_async, vp, 0, &p0,   \
+                                 TS_RUN, minclsyspri);                  \
     } while (0)
 
 
@@ -301,7 +305,25 @@ extern errno_t VOP_SYMLINK  (struct vnode *, struct vnode **,
                              struct componentname *, struct vnode_attr *,
                              char *, vfs_context_t);
 
+void spl_vnode_fini(void);
+int  spl_vnode_init(void);
+
+
 extern int spl_vfs_root(mount_t mount, struct vnode **vp);
 #define VFS_ROOT(V, L, VP) spl_vfs_root((V), (VP))
+
+extern void cache_purgevfs(mount_t mp);
+
+int spl_vn_rdwr(
+            enum uio_rw rw,
+            struct vnode *vp,
+            caddr_t base,
+            ssize_t len,
+            offset_t offset,
+            enum uio_seg seg,
+            int ioflag,
+            rlim64_t ulimit,        /* meaningful only if rw is UIO_WRITE */
+            cred_t *cr,
+            ssize_t *residp);
 
 #endif /* SPL_VNODE_H */

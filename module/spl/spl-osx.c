@@ -83,6 +83,52 @@ uint32_t zone_get_hostid(void *zone)
     return myhostid;
 }
 
+extern void *(*__ihook_malloc)(size_t size);
+extern void (*__ihook_free)(void *);
+
+#include <spl-bmalloc.h>
+#include <sys/systeminfo.h>
+
+
+extern const char              *panicstr;
+extern int system_inshutdown;
+
+const char *spl_panicstr(void)
+{
+    return panicstr;
+}
+
+int spl_system_inshutdown(void)
+{
+    return system_inshutdown;
+}
+
+int
+ddi_copyin(const void *from, void *to, size_t len, int flags)
+{
+    /* Fake ioctl() issued by kernel, 'from' is a kernel address */
+    if (flags & FKIOCTL) {
+        memcpy(to, from, len);
+        return 0;
+    }
+
+    return copyin((user_addr_t)from, (void *)to, len);
+}
+
+int
+ddi_copyout(const void *from, void *to, size_t len, int flags)
+{
+    /* Fake ioctl() issued by kernel, 'from' is a kernel address */
+    if (flags & FKIOCTL) {
+        memcpy(to, from, len);
+        return 0;
+    }
+
+    return copyout(from, (user_addr_t)to, len);
+}
+
+
+
 kern_return_t spl_start (kmod_info_t * ki, void * d)
 {
     //max_ncpus = processor_avail_count;
@@ -92,23 +138,6 @@ kern_return_t spl_start (kmod_info_t * ki, void * d)
     sysctlbyname("hw.logicalcpu_max", &max_ncpus, &len, NULL, 0);
     len = sizeof(total_memory);
     sysctlbyname("hw.memsize", &total_memory, &len, NULL, 0);
-
-    /*
-     * OSX kernel can only use quarter the memory available. Unless
-     * boot-args zsize is used to bring it to 50%.
-     */
-    vm_size_t zsizearg;
-    if (PE_parse_boot_argn("zsize", &zsizearg, sizeof (zsizearg))) {
-        uint64_t mem = zsizearg * 1024ULL * 1024ULL;
-
-        // OSX does not let you set zsize over 50%
-        if (mem > (total_memory>>1))
-            mem = total_memory>>1;
-
-    } else {
-        //printf("SPL: boot-args zsize not used, restricted to 25%% memory\n");
-        //total_memory >>= 2;
-    }
 
     physmem = total_memory / PAGE_SIZE;
 
@@ -131,10 +160,13 @@ kern_return_t spl_start (kmod_info_t * ki, void * d)
 
     strlcpy(utsname.nodename, hostname, sizeof(utsname.nodename));
 
-    spl_kmem_init(total_memory);
     spl_mutex_subsystem_init();
+    bmalloc_init();
+    spl_kmem_init(total_memory);
+	spl_tsd_init();
     spl_rwlock_init();
     spl_taskq_init();
+    spl_vnode_init();
 
     IOLog("SPL: Loaded module v0.01 (ncpu %d, memsize %llu, pages %llu)\n",
           max_ncpus, total_memory, physmem);
@@ -144,10 +176,13 @@ kern_return_t spl_start (kmod_info_t * ki, void * d)
 
 kern_return_t spl_stop (kmod_info_t * ki, void * d)
 {
+    spl_vnode_fini();
     spl_taskq_fini();
     spl_rwlock_fini();
+	spl_tsd_fini();
     spl_mutex_subsystem_fini();
     spl_kmem_fini();
+    bmalloc_fini();
     IOLog("SPL: Unloaded module\n");
     return KERN_SUCCESS;
 }
